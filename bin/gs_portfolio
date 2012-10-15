@@ -1,0 +1,92 @@
+#!/bin/sh
+
+set -u
+
+# require imagemagick > 6
+gs_resize_crop() {
+	local origin_filename=$1
+	local result_filename=$2
+
+	convert ${origin_filename} \
+		-resize ${FINAL_WIDTH}x${FINAL_WIDTH} \
+		-gravity North \
+		+repage ${result_filename}
+		#-crop ${FINAL_WIDTH}x${FINAL_HEIGHT}+0+0 \
+}
+
+gs_shadow() {
+	local origin_filename=$1
+	local result_filename=$2
+
+	convert ${origin_filename} \
+		\( +clone -background black -shadow 70x10+0+0 \) \
+		+swap -background transparent \
+		-layers merge +repage \
+		${result_filename}
+}
+
+
+# create background image
+FINAL_WIDTH=1024
+FINAL_HEIGHT=$(( 1024 * 10 / 16 ))
+
+echo "$FINAL_WIDTH * $FINAL_HEIGHT"
+
+#
+# create background image
+# 
+bg_width=$(( $FINAL_WIDTH * 2))
+bg_height=$(( $FINAL_HEIGHT * 3 / 2))
+bg_height_move=$((FINAL_HEIGHT / 4))
+bg_filename=rgradient_crop.png
+
+convert -size ${bg_width}x${bg_height} \
+	radial-gradient:  -gravity center \
+	-crop ${FINAL_WIDTH}x${FINAL_HEIGHT}+0-${bg_height_move} \
+	${bg_filename}
+
+# take an image for left, right && center
+# crop to fit the 16:10 ratio
+set -x
+left_origin_filename=left.png
+left_crop_filename=left_crop.png
+left_shadow_filename=left_shadow.png
+left_pers_filename=left_pers.png
+pers_width=$((FINAL_WIDTH * 40 / 100))
+pers_height=$((FINAL_HEIGHT * 50 / 100))
+pers_height_move=$(( ($FINAL_HEIGHT - $pers_height) / 2 ))
+pers_height_bottom=$(( $FINAL_HEIGHT - $pers_height_move ))
+
+gs_resize_crop ${left_origin_filename} ${left_crop_filename}
+gs_shadow ${left_crop_filename} ${left_shadow_filename}
+
+convert ${left_shadow_filename} \
+	-virtual-pixel transparent \
+	-distort Perspective \
+	"0,0 0,0  ${FINAL_WIDTH},0 ${pers_width},${pers_height_move} ${FINAL_WIDTH},${FINAL_HEIGHT} ${pers_width},${pers_height_bottom} 0,${FINAL_HEIGHT} 0,${FINAL_HEIGHT}" \
+	-crop ${pers_width}x${FINAL_HEIGHT}+0+0 \
+	${left_pers_filename}
+
+set -x
+
+right_origin_filename=right.png
+right_crop_filename=right_crop.png
+right_shadow_filename=right_shadow.png
+gs_resize_crop ${right_origin_filename} ${right_crop_filename}
+gs_shadow ${right_crop_filename} ${right_shadow_filename}
+
+center_origin_filename=center.png
+center_crop_filename=center_crop.png
+center_shadow_filename=center_shadow.png
+gs_resize_crop ${center_origin_filename} ${center_crop_filename}
+gs_shadow ${center_crop_filename} ${center_shadow_filename}
+
+convert \
+	-page ${FINAL_WIDTH}x${FINAL_HEIGHT}+0+0 ${bg_filename} \
+	-page +10+200 \( ${left_pers_filename} -resize 50%  \) \
+	-page +300+100 \( ${center_shadow_filename} -resize 60%  \) \
+	-flatten \
+	final.png
+# distord left & right for perspective
+# add slight shadow on left & right
+# add larger shadow on center
